@@ -51,13 +51,16 @@ pub enum Profile {
     /// A solid circle.
     RoundBar { diameter: f64 },
     /// A rectangular or square hollow section. The outer corner radius defaults to twice the
-    /// wall; the inner radius is the outer one less the wall.
+    /// wall; the inner radius defaults to the outer one less the wall, as on a cold-formed tube.
+    /// A hot-finished tube gives its inner radius on its own.
     RectTube {
         width: f64,
         height: f64,
         wall: f64,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         outer_radius: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        inner_radius: Option<f64>,
     },
     /// A round hollow section (pipe or tube).
     RoundTube { diameter: f64, wall: f64 },
@@ -126,8 +129,8 @@ pub fn profile_kinds() -> Vec<ProfileKind> {
             kind: "rect_tube",
             label: "Rectangular Tube",
             required: &["width", "height", "wall"],
-            optional: &["outer_radius"],
-            example: Profile::RectTube { width: 40.0, height: 40.0, wall: 3.0, outer_radius: None },
+            optional: &["outer_radius", "inner_radius"],
+            example: Profile::RectTube { width: 40.0, height: 40.0, wall: 3.0, outer_radius: None, inner_radius: None },
         },
         ProfileKind {
             kind: "round_tube",
@@ -172,6 +175,7 @@ pub fn dimension_label(name: &str) -> &'static str {
         "flange" => "Flange thickness",
         "corner_radius" => "Corner radius",
         "outer_radius" => "Outer radius",
+        "inner_radius" => "Inner radius",
         "root_radius" => "Root radius",
         "toe_radius" => "Toe radius",
         _ => "Dimension",
@@ -407,9 +411,10 @@ impl Profile {
         let room = |x: f64| if x.is_finite() { x.max(0.0) } else { 0.0 };
         match *self {
             Profile::Bar { width, height, corner_radius } => Profile::Bar { width, height, corner_radius: Some(corner_radius.unwrap_or(0.0)) },
-            Profile::RectTube { width, height, wall, outer_radius } => {
+            Profile::RectTube { width, height, wall, outer_radius, inner_radius } => {
                 let r = outer_radius.unwrap_or_else(|| (2.0 * wall).min(width.min(height) / 2.0));
-                Profile::RectTube { width, height, wall, outer_radius: Some(r) }
+                let ri = inner_radius.unwrap_or_else(|| room(r - wall));
+                Profile::RectTube { width, height, wall, outer_radius: Some(r), inner_radius: Some(ri) }
             }
             Profile::Angle { width, height, thickness: t, root_radius, toe_radius } => {
                 // Root and toe share the inside length of the shorter leg.
@@ -466,14 +471,22 @@ impl Profile {
                 Ok(Region2 { outer: rounded_rect(w, h, r)?, holes: Vec::new() })
             }
             Profile::RoundBar { diameter } => Ok(Region2 { outer: Loop2::circle(Vec2::ZERO, dim("diameter", diameter)? / 2.0), holes: Vec::new() }),
-            Profile::RectTube { width, height, wall, outer_radius } => {
+            Profile::RectTube { width, height, wall, outer_radius, inner_radius } => {
                 let (w, h, t) = (dim("width", width)?, dim("height", height)?, dim("wall", wall)?);
                 less_half("wall", t, "the smaller side", w.min(h))?;
                 let ro = radius("outer_radius", outer_radius.unwrap_or(0.0))?;
                 if ro > w.min(h) / 2.0 {
                     return Err(invalid(format!("profile `outer_radius` ({ro}) must be at most half the smaller side ({})", w.min(h) / 2.0)));
                 }
-                let ri = (ro - t).max(0.0);
+                let ri = radius("inner_radius", inner_radius.unwrap_or(0.0))?;
+                at_most("`inner_radius`", ri, w.min(h) / 2.0 - t, "half the hole's smaller side")?;
+                // Across a corner the wall is t − (ro − ri)(1 − 1/√2); it must stay above zero.
+                let corner = t - (ro - ri) * (1.0 - std::f64::consts::FRAC_1_SQRT_2);
+                if corner < MIN_PROFILE_DIMENSION {
+                    return Err(invalid(format!(
+                        "profile `inner_radius` ({ri}) leaves no wall at the corners with `outer_radius` {ro} and `wall` {t}"
+                    )));
+                }
                 Ok(Region2 { outer: rounded_rect(w, h, ro)?, holes: vec![rounded_rect(w - 2.0 * t, h - 2.0 * t, ri)?.reversed()] })
             }
             Profile::RoundTube { diameter, wall } => {

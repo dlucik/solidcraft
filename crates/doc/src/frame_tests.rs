@@ -103,7 +103,7 @@ fn rect_tube_sharp_and_rounded() {
     close(s.iyy, (40.0 * 60f64.powi(3) - 34.0 * 54f64.powi(3)) / 12.0, "sharp Iyy");
     // Defaults: outer radius 2 t = 6, inner radius 3.
     let p = profile(serde_json::json!({"kind": "rect_tube", "width": 40, "height": 40, "wall": 3}));
-    assert_eq!(p.filled(), Profile::RectTube { width: 40.0, height: 40.0, wall: 3.0, outer_radius: Some(6.0) });
+    assert_eq!(p.filled(), Profile::RectTube { width: 40.0, height: 40.0, wall: 3.0, outer_radius: Some(6.0), inner_radius: Some(3.0) });
     let s = sec(&p);
     let outer = 1600.0 - 4.0 * SPANDREL * 36.0;
     let inner = 34.0 * 34.0 - 4.0 * SPANDREL * 9.0;
@@ -171,6 +171,36 @@ fn every_kind_example_builds() {
 }
 
 #[test]
+fn rect_tube_inner_radius_given_on_its_own() {
+    // A hot-finished tube: outer radius 1.5 t, inner radius 1.0 t, so the inner radius is not the
+    // outer one less the wall (that would be 3).
+    let p = profile(serde_json::json!({"kind": "rect_tube", "width": 150, "height": 150, "wall": 6, "outer_radius": 9, "inner_radius": 6}));
+    let s = sec(&p);
+    let outer = 150.0 * 150.0 - 4.0 * SPANDREL * 81.0;
+    let inner = 138.0 * 138.0 - 4.0 * SPANDREL * 36.0;
+    close(s.area, outer - inner, "area with its own inner radius");
+    let default = sec(&profile(serde_json::json!({"kind": "rect_tube", "width": 150, "height": 150, "wall": 6, "outer_radius": 9})));
+    // A bigger inner radius leaves a smaller hole.
+    close(s.area - default.area, 4.0 * SPANDREL * (36.0 - 9.0), "differs from the default inner radius 3");
+    // Kept through saving, and left out again when not given.
+    let back: Profile = serde_json::from_value(serde_json::to_value(&p).unwrap()).unwrap();
+    assert_eq!(back, p);
+    let plain = profile(serde_json::json!({"kind": "rect_tube", "width": 40, "height": 40, "wall": 3}));
+    assert_eq!(serde_json::to_value(&plain).unwrap(), serde_json::json!({"kind": "rect_tube", "width": 40.0, "height": 40.0, "wall": 3.0}));
+    let spec: ProfileSpec = serde_json::from_value(serde_json::json!({"kind": "rect_tube", "width": 40, "height": 40, "wall": 3, "inner_radius": "r_i"})).unwrap();
+    assert_eq!(spec.dims.get("inner_radius").map(|e| e.as_str()), Some("r_i"));
+    // Too big for the hole, negative, or leaving no wall at the corners.
+    for (j, why) in [
+        (serde_json::json!({"kind": "rect_tube", "width": 40, "height": 30, "wall": 3, "inner_radius": 12.5}), "`inner_radius`"),
+        (serde_json::json!({"kind": "rect_tube", "width": 40, "height": 40, "wall": 3, "inner_radius": -1}), "`inner_radius`"),
+        (serde_json::json!({"kind": "rect_tube", "width": 100, "height": 100, "wall": 2, "outer_radius": 50, "inner_radius": 0}), "no wall at the corners"),
+    ] {
+        let err = profile(j.clone()).region().unwrap_err().to_string();
+        assert!(err.contains(why), "{j}: {err}");
+    }
+}
+
+#[test]
 fn dimensions_that_do_not_fit_are_refused() {
     let bad = [
         serde_json::json!({"kind": "bar", "width": f64::MAX, "height": 1}),
@@ -205,7 +235,7 @@ fn dimensions_that_do_not_fit_are_refused() {
 fn non_finite_dimensions_are_refused() {
     for v in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(Profile::RoundBar { diameter: v }.region().is_err());
-        assert!(Profile::RectTube { width: 40.0, height: 40.0, wall: 3.0, outer_radius: Some(v) }.region().is_err());
+        assert!(Profile::RectTube { width: 40.0, height: 40.0, wall: 3.0, outer_radius: Some(v), inner_radius: None }.region().is_err());
     }
 }
 
@@ -369,7 +399,7 @@ fn a_spec_holds_expressions_and_resolves_them() {
             other => Err(crate::DocError::Invalid(other.into())),
         })
         .unwrap();
-    assert_eq!(p, Profile::RectTube { width: 40.0, height: 60.0, wall: 3.0, outer_radius: None });
+    assert_eq!(p, Profile::RectTube { width: 40.0, height: 60.0, wall: 3.0, outer_radius: None, inner_radius: None });
     // A value that is not a finite length is refused, naming the dimension.
     let err = spec.resolve(|name, _| Ok(if name == "wall" { f64::NAN } else { 40.0 })).unwrap_err().to_string();
     assert!(err.contains("wall"), "{err}");
@@ -392,7 +422,7 @@ fn a_spec_holds_expressions_and_resolves_them() {
 
 #[test]
 fn descriptions_round_to_a_tenth_of_a_micron() {
-    let p = Profile::RectTube { width: 25.4, height: 25.4, wall: 0.125 * 25.4, outer_radius: None };
+    let p = Profile::RectTube { width: 25.4, height: 25.4, wall: 0.125 * 25.4, outer_radius: None, inner_radius: None };
     assert_eq!(p.description(), "Rect Tube 25.4x25.4x3.175");
     assert_eq!(Profile::RoundBar { diameter: 1.0 / 3.0 }.description(), "Round Bar 0.3333");
 }
