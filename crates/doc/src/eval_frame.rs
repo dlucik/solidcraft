@@ -206,6 +206,7 @@ fn profile_regions(vals: &BTreeMap<String, Value>, st: &ModelState, profile: &Me
             };
             (solidcraft_sketch::merge_regions(&picked), ss.name.clone())
         }
+        MemberProfile::Outline { outline, name } => (vec![outline.region()?], if name.is_empty() { "Outline".into() } else { name.clone() }),
     };
     match regions.len() {
         1 => Ok((regions, description)),

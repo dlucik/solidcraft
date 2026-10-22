@@ -195,6 +195,8 @@ pub fn for_feature(app: &SolveApp, kind: &FeatureKind) -> Option<(Kind, Vec<SelI
             }
         }
         MemberProfile::Sketch { sketch, profiles: ProfileSel::All } => m.whole = Some(sketch.0),
+        // Outlines come from a table or a command; the dialog keeps them as they are.
+        MemberProfile::Outline { .. } => {}
         MemberProfile::Sketch { sketch, profiles } => {
             let picks = st.sketch(sketch.0).map(|ss| profile_indices(ss, profiles)).unwrap_or_default();
             if let Some(i) = inputs.get_mut(1) {

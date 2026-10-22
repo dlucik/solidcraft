@@ -281,6 +281,13 @@ pub enum MemberProfile {
         #[walk(profiles_of = sketch)]
         profiles: crate::ProfileSel,
     },
+    /// A section given by its geometry, an outer loop and its holes, kept in the design so it
+    /// rebuilds without the table it came from. `name` is what its members are named after.
+    Outline {
+        outline: crate::frame_outline::Outline,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        name: String,
+    },
 }
 
 impl Anchor {

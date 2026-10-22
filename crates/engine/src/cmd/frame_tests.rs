@@ -386,6 +386,35 @@ fn members_undo_and_survive_save_and_reopen() {
     assert_eq!(bodies(&mut s).len(), 4);
 }
 
+#[test]
+fn an_outline_is_the_section_and_is_kept_in_the_design() {
+    let mut s = Session::default();
+    rectangle_frame(&mut s);
+    // A 40 × 40 box, wall 3, sharp corners, drawn as an outer loop and its hole.
+    let sq = |a: f64, b: f64| json!([{"line": [a, a]}, {"line": [b, a]}, {"line": [b, b]}, {"line": [a, b]}]);
+    let outline = json!({"outer": sq(-20.0, 20.0), "holes": [sq(-17.0, 17.0)]});
+    run(&mut s, "frame.member", json!({"sketch": "Frame", "profile_outline": outline, "profile_name": "Box 40x40x3"}));
+    let bs = bodies(&mut s);
+    assert_eq!(bs.len(), 4);
+    assert_eq!(bs[0].0, "Box 40x40x3");
+    let area = 40.0 * 40.0 - 34.0 * 34.0;
+    let v = total_volume(&mut s);
+    assert!(rel(v, area * 2000.0) < MEASURED, "{v} vs {}", area * 2000.0);
+    // The design holds its own copy: it rebuilds the same after saving and reopening.
+    let mut reopened = Session::new(solidcraft_doc::Document::from_json(&s.doc.to_json()).unwrap());
+    let after = bodies(&mut reopened);
+    assert_eq!(bs.len(), after.len());
+    for (b, a) in bs.iter().zip(&after) {
+        assert!(b.0 == a.0 && rel(a.1, b.1) < 1e-9 && near3(a.2, b.2) && near3(a.3, b.3), "{b:?} vs {a:?}");
+    }
+    // A bad outline, or two sources at once, is refused with the reason.
+    let bowtie = json!({"outer": [{"line": [0, 0]}, {"line": [40, 40]}, {"line": [40, 0]}, {"line": [0, 30]}]});
+    let err = s.execute("frame.member", &json!({"sketch": "Frame", "profile_outline": bowtie})).unwrap_err().to_string();
+    assert!(err.contains("crosses itself"), "{err}");
+    let err = s.execute("frame.member", &json!({"sketch": "Frame", "profile": tube(), "profile_outline": outline})).unwrap_err().to_string();
+    assert!(err.contains("one of them"), "{err}");
+}
+
 // ---------------------------------------------------------------------------------------------
 // Regressions from the adversarial review of #4003
 

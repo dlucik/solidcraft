@@ -187,13 +187,17 @@ fn rect_tube_inner_radius_given_on_its_own() {
     assert_eq!(back, p);
     let plain = profile(serde_json::json!({"kind": "rect_tube", "width": 40, "height": 40, "wall": 3}));
     assert_eq!(serde_json::to_value(&plain).unwrap(), serde_json::json!({"kind": "rect_tube", "width": 40.0, "height": 40.0, "wall": 3.0}));
-    let spec: ProfileSpec = serde_json::from_value(serde_json::json!({"kind": "rect_tube", "width": 40, "height": 40, "wall": 3, "inner_radius": "r_i"})).unwrap();
+    let spec: ProfileSpec =
+        serde_json::from_value(serde_json::json!({"kind": "rect_tube", "width": 40, "height": 40, "wall": 3, "inner_radius": "r_i"})).unwrap();
     assert_eq!(spec.dims.get("inner_radius").map(|e| e.as_str()), Some("r_i"));
     // Too big for the hole, negative, or leaving no wall at the corners.
     for (j, why) in [
         (serde_json::json!({"kind": "rect_tube", "width": 40, "height": 30, "wall": 3, "inner_radius": 12.5}), "`inner_radius`"),
         (serde_json::json!({"kind": "rect_tube", "width": 40, "height": 40, "wall": 3, "inner_radius": -1}), "`inner_radius`"),
-        (serde_json::json!({"kind": "rect_tube", "width": 100, "height": 100, "wall": 2, "outer_radius": 50, "inner_radius": 0}), "no wall at the corners"),
+        (
+            serde_json::json!({"kind": "rect_tube", "width": 100, "height": 100, "wall": 2, "outer_radius": 50, "inner_radius": 0}),
+            "no wall at the corners",
+        ),
     ] {
         let err = profile(j.clone()).region().unwrap_err().to_string();
         assert!(err.contains(why), "{j}: {err}");
